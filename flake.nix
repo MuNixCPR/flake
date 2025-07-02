@@ -31,9 +31,6 @@
             # Node.js 22
             nodejs_22
             
-            # PostgreSQL 14
-            postgresql_14
-            
             # Build dependencies from the guide
             openssl
             readline
@@ -51,8 +48,8 @@
             gnumake
             pkg-config
             
-            # Development tools
-            pgcli  # Alternative to pgAdmin4
+            # PostgreSQL client tools
+            postgresql_14
           ];
           
           # Environment variables
@@ -66,11 +63,12 @@
             # Virtual environment setup (following the guide exactly)
             VENV_DIR="$PROJECT_ROOT/../musenv"
             
-            # PostgreSQL setup
-            export PGDATA="$PROJECT_ROOT/.postgres"
+            # PostgreSQL configuration (using Homebrew PostgreSQL)
             export PGHOST="localhost"
             export PGPORT="5432"
             export PGDATABASE="teleband"
+            export DATABASE_URL="postgres://$(whoami)@localhost/teleband"
+            export DJANGO_SETTINGS_MODULE="config.settings.local"
             
             # Ensure we use the correct Python
             export PYTHON="${pythonEnv}/bin/python3.12"
@@ -91,72 +89,95 @@
               export PYTHONPATH=""
               unset NIX_PYTHONPATH
               
+              # Upgrade pip immediately after activation
+              pip install --upgrade pip --quiet
+              
               echo "Python: $(which python) - $(python --version)"
+              echo "Pip: $(which pip)"
             }
             
-            # Setup PostgreSQL
-            setup_postgres() {
-              if [ ! -d "$PGDATA" ]; then
-                echo "Initializing PostgreSQL..."
-                initdb --auth=trust --no-locale --encoding=UTF8
-              fi
+            # Check PostgreSQL status (Homebrew)
+            check_postgres() {
+              echo "Checking PostgreSQL status..."
               
-              if ! pg_ctl status > /dev/null 2>&1; then
-                echo "Starting PostgreSQL..."
-                pg_ctl start -l "$PGDATA/postgres.log"
+              # Check if PostgreSQL is running
+              if brew services list | grep -q "postgresql.*started"; then
+                echo "✅ PostgreSQL is running (via Homebrew)"
                 
-                # Wait for PostgreSQL to start
-                sleep 2
+                # Check if database exists
+                if psql -lqt | cut -d \| -f 1 | grep -qw teleband; then
+                  echo "✅ Database 'teleband' exists"
+                else
+                  echo "⚠️  Database 'teleband' not found"
+                  echo "   Run: createdb teleband"
+                fi
               else
-                echo "PostgreSQL is already running"
-              fi
-              
-              # Always check if database exists and create if needed
-              if ! psql -lqt | cut -d \| -f 1 | grep -qw teleband; then
-                echo "Creating teleband database..."
-                createdb teleband
-              else
-                echo "Database 'teleband' already exists"
+                echo "❌ PostgreSQL is not running"
+                echo "   To start: brew services start postgresql@14"
+                echo "   Or: brew services start postgresql"
               fi
             }
             
             # Initial setup (run once)
             musiccpr_init() {
               echo "🚀 Running initial MusicCPR setup..."
+              echo ""
+              
+              # Check PostgreSQL first
+              check_postgres
+              echo ""
               
               # 1. Setup Python environment
               setup_venv
               
-              # 2. Setup PostgreSQL
-              setup_postgres
-              
-              # 3. Create .env file
+              # 2. Create .env file
               echo "Creating .env file..."
               cat > .env << EOF
-DATABASE_URL=postgres:///teleband
-DJANGO_SETTINGS_MODULE=config.settings.local
+DATABASE_URL=$DATABASE_URL
+DJANGO_SETTINGS_MODULE=$DJANGO_SETTINGS_MODULE
+SECRET_KEY=your-secret-key-here-$(openssl rand -hex 32)
 EOF
+              echo "✅ Created .env file"
               
-              # 4. Install Python dependencies
+              # 3. Install Python dependencies
+              echo ""
               echo "Installing Python dependencies..."
               pip install --upgrade pip
               pip install -r requirements/local.txt
               
-              # 5. Create media directories
+              # 4. Create media directories
               mkdir -p teleband/media/accompaniments
               mkdir -p teleband/media/sample_audio
-              echo "⚠️  Don't forget to get accompaniments and sample_audio from a teammate!"
               
-              # 6. Run migrations
-              echo "Running database migrations..."
-              python manage.py migrate
+              if [ -z "$(ls -A teleband/media/accompaniments 2>/dev/null)" ] || [ -z "$(ls -A teleband/media/sample_audio 2>/dev/null)" ]; then
+                echo ""
+                echo "⚠️  Media directories are empty!"
+                echo "   Please get accompaniments and sample_audio from a teammate"
+                echo "   and place them in teleband/media/"
+              fi
               
-              # 7. Create superuser
-              echo "Creating Django superuser..."
-              python manage.py createsuperuser
+              # 5. Check database and run migrations
+              if psql -lqt | cut -d \| -f 1 | grep -qw teleband; then
+                echo ""
+                echo "Running database migrations..."
+                python manage.py migrate
+                
+                # 6. Create superuser
+                echo ""
+                echo "Creating Django superuser..."
+                echo "This will be your admin login for http://127.0.0.1:8000/admin/"
+                python manage.py createsuperuser
+              else
+                echo ""
+                echo "⚠️  Database 'teleband' not found!"
+                echo "   Please create it with: createdb teleband"
+                echo "   Then run 'musiccpr_init' again"
+                return 1
+              fi
               
-              # 8. Setup frontend
+              # 7. Setup frontend
               if [ -d ../CPR-Music ]; then
+                echo ""
                 echo "Setting up frontend..."
                 cd ../CPR-Music
                 
@@ -167,58 +188,183 @@ NEXTAUTH_URL="http://localhost:3000"
 EOF
                 fi
                 
+                echo "Installing frontend dependencies..."
                 npm install
+                
+                # Update browserslist database
+                npx update-browserslist-db@latest --yes 2>/dev/null || true
+                
                 cd "$PROJECT_ROOT"
               else
+                echo ""
                 echo "⚠️  Frontend directory ../CPR-Music not found!"
+                echo "   Please clone it from your fork"
               fi
               
+              echo ""
               echo "✅ Initial setup complete!"
               echo ""
               echo "To start development:"
-              echo "  1. Run 'musiccpr_start' to start both backend and frontend"
-              echo "  2. Or run 'start_backend' and 'start_frontend' separately"
+              echo "  1. Run 'backend' to start Django"
+              echo "  2. Run 'frontend' in another terminal to start Next.js"
             }
             
-            # Daily startup command
+            # Daily startup
             musiccpr_start() {
               echo "🎸 Starting MusicCPR development environment..."
+              
+              # Check PostgreSQL
+              check_postgres
               
               # Activate virtual environment
               setup_venv
               
-              # Start PostgreSQL if needed
-              setup_postgres
+              # Check for migrations
+              if [ -f manage.py ] && psql -lqt | cut -d \| -f 1 | grep -qw teleband; then
+                echo ""
+                echo "Checking for unapplied migrations..."
+                if python manage.py showmigrations | grep -q "\[ \]"; then
+                  echo "Found unapplied migrations. Applying..."
+                  python manage.py migrate
+                else
+                  echo "All migrations are up to date ✓"
+                fi
+              fi
               
               echo ""
               echo "✅ Environment ready!"
               echo ""
-              echo "Start the backend with: start_backend"
-              echo "Start the frontend with: start_frontend (in a new terminal)"
+              echo "Commands:"
+              echo "  backend  - Start Django server"
+              echo "  frontend - Start Next.js server"
               echo ""
               echo "URLs:"
-              echo "  Backend: http://127.0.0.1:8000/admin/"
-              echo "  Frontend: http://localhost:3000"
+              echo "  Django Admin: http://127.0.0.1:8000/admin/"
+              echo "  Frontend:     http://localhost:3000"
             }
             
-            # Helper functions
-            start_backend() {
+            # Start backend
+            backend() {
               if [ ! -f "$VENV_DIR/bin/activate" ]; then
                 echo "Virtual environment not found. Run 'musiccpr_init' first!"
                 return 1
               fi
               
               source "$VENV_DIR/bin/activate"
+              
+              echo "Starting Django development server..."
               python manage.py runserver
             }
             
-            start_frontend() {
+            # Start frontend
+            frontend() {
+              if [ ! -d ../CPR-Music ]; then
+                echo "Frontend directory not found at ../CPR-Music"
+                return 1
+              fi
+              
               cd ../CPR-Music
+              echo "Starting Next.js development server..."
               npm run dev
             }
             
-            stop_postgres() {
-              pg_ctl stop
+            # Status check
+            musiccpr_status() {
+              echo "🔍 MusicCPR Environment Status"
+              echo "=============================="
+              echo ""
+              
+              # Python/venv status
+              echo "Python Environment:"
+              if [ -d "$VENV_DIR" ]; then
+                echo "  ✅ Virtual environment exists"
+                if [ -n "$VIRTUAL_ENV" ]; then
+                  echo "  ✅ Virtual environment is activated"
+                else
+                  echo "  ⚠️  Virtual environment not activated"
+                fi
+              else
+                echo "  ❌ Virtual environment not found"
+              fi
+              echo ""
+              
+              # PostgreSQL status
+              echo "PostgreSQL:"
+              check_postgres
+              echo ""
+              
+              # Django status
+              echo "Django Project:"
+              if [ -f manage.py ]; then
+                echo "  ✅ In Django project directory"
+                if [ -f .env ]; then
+                  echo "  ✅ .env file exists"
+                else
+                  echo "  ❌ .env file missing"
+                fi
+              else
+                echo "  ❌ Not in Django project directory"
+              fi
+              echo ""
+              
+              # Frontend status
+              echo "Frontend:"
+              if [ -d ../CPR-Music ]; then
+                echo "  ✅ Frontend directory found"
+                if [ -f ../CPR-Music/.env.local ]; then
+                  echo "  ✅ Frontend .env.local exists"
+                else
+                  echo "  ❌ Frontend .env.local missing"
+                fi
+              else
+                echo "  ❌ Frontend directory not found"
+              fi
+              echo ""
+              
+              # Media directories
+              echo "Media Directories:"
+              if [ -d teleband/media/accompaniments ] && [ -n "$(ls -A teleband/media/accompaniments 2>/dev/null)" ]; then
+                echo "  ✅ Accompaniments folder has content"
+              else
+                echo "  ⚠️  Accompaniments folder is empty"
+              fi
+              
+              if [ -d teleband/media/sample_audio ] && [ -n "$(ls -A teleband/media/sample_audio 2>/dev/null)" ]; then
+                echo "  ✅ Sample audio folder has content"
+              else
+                echo "  ⚠️  Sample audio folder is empty"
+              fi
+            }
+            
+            # Help command
+            mhelp() {
+              echo "🎵 MusicCPR Development Environment Help"
+              echo "======================================="
+              echo ""
+              echo "📚 Available Commands:"
+              echo ""
+              echo "  mhelp            - Show this help message"
+              echo "  musiccpr_init    - First-time setup (venv, deps, database, superuser)"
+              echo "  musiccpr_start   - Daily startup (activate venv, check migrations)"
+              echo "  musiccpr_status  - Check environment status"
+              echo ""
+              echo "🚀 Running Services:"
+              echo "  backend          - Start Django server"
+              echo "  frontend         - Start Next.js server (run in new terminal)"
+              echo ""
+              echo "📍 Project URLs:"
+              echo "  Django Admin: http://127.0.0.1:8000/admin/"
+              echo "  Frontend:     http://localhost:3000"
+              echo ""
+              echo "⚠️  Prerequisites:"
+              echo "  - PostgreSQL must be installed via Homebrew"
+              echo "  - PostgreSQL must be running: brew services start postgresql@14"
+              echo "  - Database must exist: createdb teleband"
+              echo ""
+              echo "📝 Quick Start:"
+              echo "  1. Ensure PostgreSQL is running"
+              echo "  2. Run 'musiccpr_init' (first time only)"
+              echo "  3. Run 'backend' and 'frontend' in separate terminals"
             }
             
             # Auto-activate venv if it exists
@@ -227,18 +373,16 @@ EOF
             fi
             
             echo ""
-            echo "Available commands:"
-            echo "  musiccpr_init   - First-time setup (creates venv, installs deps, etc.)"
-            echo "  musiccpr_start  - Daily startup (activates venv, starts postgres)"
-            echo "  start_backend   - Start Django development server"
-            echo "  start_frontend  - Start Next.js frontend"
-            echo "  stop_postgres   - Stop PostgreSQL"
+            echo "Node: $(node --version)"
+            echo "PostgreSQL client: $(psql --version)"
+            echo ""
+            echo "Type 'mhelp' for help"
             echo ""
             
             if [ ! -d "$VENV_DIR" ]; then
-              echo "👉 First time? Run 'musiccpr_init' to set everything up!"
+              echo "👉 First time? Make sure PostgreSQL is running, then run 'musiccpr_init'"
             else
-              echo "👉 Run 'musiccpr_start' to begin development!"
+              echo "👉 Run 'musiccpr_start' to begin development"
             fi
           '';
         };
