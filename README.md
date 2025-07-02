@@ -11,6 +11,6 @@ then,
 then grab the flake from this repo and put it in your Music-CPR-Backend/ clone's root.  
 track it. **this is necessary.**  
 
-then run `nix develop`
+then run `nix flake update && nix develop`
 
 you'll be met with commands to proceed.  
