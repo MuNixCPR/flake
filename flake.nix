@@ -48,14 +48,30 @@
             gnumake
             pkg-config
             
-            # PostgreSQL client tools
+            # PostgreSQL client tools (will use system PostgreSQL if available)
             postgresql_14
           ];
           
           # Environment variables
           shellHook = ''
+            # Platform detection
+            detect_platform() {
+              if [ -f /proc/version ] && grep -q Microsoft /proc/version; then
+                echo "wsl"
+              elif [ "$(uname)" = "Darwin" ]; then
+                echo "macos"
+              elif [ "$(uname)" = "Linux" ]; then
+                echo "linux"
+              else
+                echo "unknown"
+              fi
+            }
+            
+            PLATFORM=$(detect_platform)
+            
             echo "🎵 MusicCPR Development Environment"
             echo "=================================="
+            echo "Platform: $PLATFORM"
             
             # Project root
             PROJECT_ROOT="$PWD"
@@ -63,11 +79,11 @@
             # Virtual environment setup (following the guide exactly)
             VENV_DIR="$PROJECT_ROOT/../musenv"
             
-            # PostgreSQL configuration (using Homebrew PostgreSQL)
-            export PGHOST="localhost"
-            export PGPORT="5432"
-            export PGDATABASE="teleband"
-            export DATABASE_URL="postgres://$(whoami)@localhost/teleband"
+            # PostgreSQL configuration (Cross-platform)
+            export PGHOST="''${PGHOST:-localhost}"
+            export PGPORT="''${PGPORT:-5432}"
+            export PGDATABASE="''${PGDATABASE:-teleband}"
+            export DATABASE_URL="''${DATABASE_URL:-postgres://$(whoami)@localhost/teleband}"
             export DJANGO_SETTINGS_MODULE="config.settings.local"
             
             # Ensure we use the correct Python
@@ -96,13 +112,13 @@
               echo "Pip: $(which pip)"
             }
             
-            # Check PostgreSQL status (Homebrew)
+            # Check PostgreSQL status (Cross-platform)
             check_postgres() {
               echo "Checking PostgreSQL status..."
               
-              # Check if PostgreSQL is running
-              if brew services list | grep -q "postgresql.*started"; then
-                echo "✅ PostgreSQL is running (via Homebrew)"
+              # Try to connect to PostgreSQL to check if it's running
+              if psql -c '\q' 2>/dev/null; then
+                echo "✅ PostgreSQL is running and accessible"
                 
                 # Check if database exists
                 if psql -lqt | cut -d \| -f 1 | grep -qw teleband; then
@@ -112,9 +128,28 @@
                   echo "   Run: createdb teleband"
                 fi
               else
-                echo "❌ PostgreSQL is not running"
-                echo "   To start: brew services start postgresql@14"
-                echo "   Or: brew services start postgresql"
+                echo "❌ PostgreSQL is not running or not accessible"
+                echo ""
+                echo "   To start PostgreSQL:"
+                
+                # Platform-specific start commands
+                case "$PLATFORM" in
+                  "macos")
+                    echo "   macOS: brew services start postgresql@14"
+                    ;;
+                  "linux"|"wsl")
+                    if command -v systemctl >/dev/null 2>&1; then
+                      echo "   Linux: sudo systemctl start postgresql"
+                    elif command -v service >/dev/null 2>&1; then
+                      echo "   Linux: sudo service postgresql start"
+                    else
+                      echo "   Check your system's service manager to start postgresql"
+                    fi
+                    ;;
+                  *)
+                    echo "   Check your system's service manager to start postgresql"
+                    ;;
+                esac
               fi
             }
             
@@ -357,9 +392,9 @@ EOF
               echo "  Frontend:     http://localhost:3000"
               echo ""
               echo "⚠️  Prerequisites:"
-              echo "  - PostgreSQL must be installed via Homebrew"
-              echo "  - PostgreSQL must be running: brew services start postgresql@14"
-              echo "  - Database must exist: createdb teleband"
+              echo "  - PostgreSQL must be installed and running"
+              echo "  - Database 'teleband' must exist and be accessible by your user"
+              echo "  - See README.md for platform-specific PostgreSQL setup"
               echo ""
               echo "📝 Quick Start:"
               echo "  1. Ensure PostgreSQL is running"
