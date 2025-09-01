@@ -162,25 +162,42 @@
               check_postgres
               echo ""
               
-              # 1. Setup Python environment
+              # 1. Find Django project directory
+              DJANGO_DIR=""
+              if [ -f manage.py ]; then
+                DJANGO_DIR="$PWD"
+              elif [ -f ../CPR-Music-Backend/manage.py ]; then
+                DJANGO_DIR="../CPR-Music-Backend"
+              elif [ -f CPR-Music-Backend/manage.py ]; then
+                DJANGO_DIR="CPR-Music-Backend"
+              else
+                echo "❌ Django project not found!"
+                echo "   Please run this command from a directory that contains or is adjacent to CPR-Music-Backend/"
+                return 1
+              fi
+              
+              echo "Django project directory: $DJANGO_DIR"
+              
+              # 2. Setup Python environment
               setup_venv
               
-              # 2. Create .env file
+              # 3. Create .env file in Django directory
               echo "Creating .env file..."
-              cat > .env << EOF
+              cat > "$DJANGO_DIR/.env" << EOF
 DATABASE_URL=$DATABASE_URL
 DJANGO_SETTINGS_MODULE=$DJANGO_SETTINGS_MODULE
 SECRET_KEY=your-secret-key-here-$(openssl rand -hex 32)
 EOF
-              echo "✅ Created .env file"
+              echo "✅ Created .env file in $DJANGO_DIR"
               
-              # 3. Install Python dependencies
+              # 4. Install Python dependencies
               echo ""
               echo "Installing Python dependencies..."
+              cd "$DJANGO_DIR"
               pip install --upgrade pip
               pip install -r requirements/local.txt
               
-              # 4. Create media directories
+              # 5. Create media directories
               mkdir -p teleband/media/accompaniments
               mkdir -p teleband/media/sample_audio
               
@@ -191,13 +208,13 @@ EOF
                 echo "   and place them in teleband/media/"
               fi
               
-              # 5. Check database and run migrations
+              # 6. Check database and run migrations
               if psql -lqt | cut -d \| -f 1 | grep -qw teleband; then
                 echo ""
                 echo "Running database migrations..."
                 python manage.py migrate
                 
-                # 6. Create superuser
+                # 7. Create superuser
                 echo ""
                 echo "Creating Django superuser..."
                 echo "This will be your admin login for http://127.0.0.1:8000/admin/"
@@ -210,7 +227,7 @@ EOF
                 return 1
               fi
               
-              # 7. Setup frontend
+              # 8. Setup frontend
               if [ -d ../CPR-Music ]; then
                 echo ""
                 echo "Setting up frontend..."
@@ -229,7 +246,7 @@ EOF
                 # Update browserslist database
                 npx update-browserslist-db@latest --yes 2>/dev/null || true
                 
-                cd "$PROJECT_ROOT"
+                cd "$DJANGO_DIR"
               else
                 echo ""
                 echo "⚠️  Frontend directory ../CPR-Music not found!"
@@ -285,9 +302,28 @@ EOF
                 return 1
               fi
               
+              # Find Django project directory
+              BACKEND_DIR=""
+              if [ -f manage.py ]; then
+                BACKEND_DIR="$PWD"
+              elif [ -f ../CPR-Music-Backend/manage.py ]; then
+                BACKEND_DIR="../CPR-Music-Backend"
+              elif [ -f CPR-Music-Backend/manage.py ]; then
+                BACKEND_DIR="CPR-Music-Backend"
+              else
+                echo "❌ Django project not found!"
+                echo "   Looking for manage.py in:"
+                echo "   - Current directory: $PWD"
+                echo "   - ../CPR-Music-Backend/"
+                echo "   - CPR-Music-Backend/"
+                return 1
+              fi
+              
               source "$VENV_DIR/bin/activate"
               
               echo "Starting Django development server..."
+              echo "Backend directory: $BACKEND_DIR"
+              cd "$BACKEND_DIR"
               python manage.py runserver
             }
             
@@ -330,15 +366,26 @@ EOF
               
               # Django status
               echo "Django Project:"
+              DJANGO_DIR=""
               if [ -f manage.py ]; then
-                echo "  ✅ In Django project directory"
-                if [ -f .env ]; then
+                DJANGO_DIR="$PWD"
+                echo "  ✅ Django project found in current directory"
+              elif [ -f ../CPR-Music-Backend/manage.py ]; then
+                DJANGO_DIR="../CPR-Music-Backend"
+                echo "  ✅ Django project found at ../CPR-Music-Backend/"
+              elif [ -f CPR-Music-Backend/manage.py ]; then
+                DJANGO_DIR="CPR-Music-Backend"
+                echo "  ✅ Django project found at CPR-Music-Backend/"
+              else
+                echo "  ❌ Django project not found"
+              fi
+              
+              if [ -n "$DJANGO_DIR" ]; then
+                if [ -f "$DJANGO_DIR/.env" ]; then
                   echo "  ✅ .env file exists"
                 else
                   echo "  ❌ .env file missing"
                 fi
-              else
-                echo "  ❌ Not in Django project directory"
               fi
               echo ""
               
