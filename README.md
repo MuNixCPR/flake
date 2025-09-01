@@ -1,20 +1,70 @@
-# the flake
-you need nix.  
-see steps in `devenv-nix` repo README owned by this org.  
-you need postgres globally, not managed by nix due to permission hell: `brew install postgresql@14`, then `brew services start postgresql@14`. or whatever you use for pkg management if you're like me and are a linux person. figure it out.  
+# MusicCPR Development Environment with Nix
 
-then, init the default db:
-`initdb --locale=C -E UTF-8 $(brew --prefix)/var/postgresql@14`
+## Install Nix
 
-then, `createdb teleband`
+For Linux users (including Arch Linux):
+```bash
+sh <(curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install) --daemon
+```
 
-then grab the flake from this repo and put it in your Music-CPR-Backend/ clone's root.  
-track it. **this is necessary.**  
+For macOS users, see the [official Nix installation guide](https://nixos.org/download).
 
-then run `nix flake update && nix develop`
+## Install PostgreSQL
 
-you'll be met with commands to proceed.  
-Here's what you'll see:
+Install PostgreSQL with your package manager of choice and start the service:
+
+**Arch Linux (paru/yay/pacman):**
+```bash
+# Install
+paru -S postgresql
+# or: yay -S postgresql
+# or: sudo pacman -S postgresql
+
+# Initialize database
+sudo -u postgres initdb -D /var/lib/postgres/data
+
+# Start and enable service
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+
+# Create your user and database
+sudo -u postgres createuser --interactive $(whoami)
+sudo -u postgres createdb teleband -O $(whoami)
+```
+
+**Ubuntu/Debian:**
+```bash
+sudo apt update
+sudo apt install postgresql postgresql-contrib
+sudo systemctl start postgresql
+sudo systemctl enable postgresql
+sudo -u postgres createuser --interactive $(whoami)
+sudo -u postgres createdb teleband -O $(whoami)
+```
+
+**macOS (Homebrew):**
+```bash
+brew install postgresql@14
+brew services start postgresql@14
+initdb --locale=C -E UTF-8 $(brew --prefix)/var/postgresql@14
+createdb teleband
+```
+
+**Other Linux distros:** Install postgres with your package manager of choice, then start the service and create the database as shown above.
+
+## Setup Development Environment
+
+1. Clone your MusicCPR backend repository
+2. Copy `flake.nix` from this repo to your `Music-CPR-Backend/` clone's root directory
+3. Track the flake file with git (**this is necessary**)
+4. Update and enter the nix development shell:
+
+```bash
+cd Music-CPR-Backend/
+nix flake update && nix develop
+```
+
+Once in the nix shell, you'll see the help menu with available commands:
 
 ```
 🎵 MusicCPR Development Environment Help
@@ -36,9 +86,8 @@ Here's what you'll see:
   Frontend:     http://localhost:3000
 
 ⚠️  Prerequisites:
-  - PostgreSQL must be installed via Homebrew
-  - PostgreSQL must be running: brew services start postgresql@14
-  - Database must exist: createdb teleband
+  - PostgreSQL must be installed and running (see PostgreSQL setup above)
+  - Database 'teleband' must exist and be accessible by your user
 
 📝 Quick Start:
   1. Ensure PostgreSQL is running
