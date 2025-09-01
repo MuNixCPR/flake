@@ -30,6 +30,22 @@ source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
 
 Then verify with: `nix --version`
 
+## Configure Nix Experimental Features
+
+Flakes require experimental features to be enabled. Choose one option:
+
+**Option 1 - Enable permanently (recommended):**
+```bash
+mkdir -p ~/.config/nix
+echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf
+```
+
+**Option 2 - Use flags each time:**
+```bash
+nix --extra-experimental-features "nix-command flakes" flake update
+nix --extra-experimental-features "nix-command flakes" develop
+```
+
 ## Install PostgreSQL
 
 Install PostgreSQL with your package manager of choice:
