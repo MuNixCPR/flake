@@ -3,8 +3,15 @@
 ## Install Nix
 
 For Linux users (including Arch Linux):
+
+**Bash/Zsh:**
 ```bash
 sh <(curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install) --daemon
+```
+
+**Fish shell:**
+```fish
+curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install | sh -s -- --daemon
 ```
 
 For macOS users, see the [official Nix installation guide](https://nixos.org/download).
