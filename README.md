@@ -16,48 +16,102 @@ curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install | sh -s -- --da
 
 For macOS users, see the [official Nix installation guide](https://nixos.org/download).
 
+**If you get "File already exists" errors:** You likely have Nix already installed. Instead of reinstalling, just activate it in your current shell:
+
+```fish
+# For fish shell users
+set -U fish_user_paths /nix/var/nix/profiles/default/bin $fish_user_paths
+```
+
+```bash
+# For bash/zsh users  
+source /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+```
+
+Then verify with: `nix --version`
+
 ## Install PostgreSQL
 
-Install PostgreSQL with your package manager of choice and start the service:
+Install PostgreSQL with your package manager of choice:
 
 **Arch Linux (paru/yay/pacman):**
 ```bash
-# Install
 paru -S postgresql
-# or: yay -S postgresql
+# or: yay -S postgresql  
 # or: sudo pacman -S postgresql
-
-# Initialize database
-sudo -u postgres initdb -D /var/lib/postgres/data
-
-# Start and enable service
-sudo systemctl start postgresql
-sudo systemctl enable postgresql
-
-# Create your user and database
-sudo -u postgres createuser --interactive $(whoami)
-sudo -u postgres createdb teleband -O $(whoami)
 ```
 
 **Ubuntu/Debian:**
 ```bash
 sudo apt update
 sudo apt install postgresql postgresql-contrib
-sudo systemctl start postgresql
-sudo systemctl enable postgresql
-sudo -u postgres createuser --interactive $(whoami)
-sudo -u postgres createdb teleband -O $(whoami)
 ```
 
 **macOS (Homebrew):**
 ```bash
 brew install postgresql@14
-brew services start postgresql@14
-initdb --locale=C -E UTF-8 $(brew --prefix)/var/postgresql@14
-createdb teleband
 ```
 
-**Other Linux distros:** Install postgres with your package manager of choice, then start the service and create the database as shown above.
+**Other Linux distros:** Install postgres with your package manager of choice.
+
+## Database Setup
+
+After installing PostgreSQL, you need to initialize and configure the database:
+
+### Linux Users (Arch, Ubuntu, etc.)
+
+1. **Initialize the database cluster:**
+   ```bash
+   # Arch Linux
+   sudo -u postgres initdb -D /var/lib/postgres/data
+   
+   # Ubuntu/Debian (usually auto-initialized during install)
+   # Skip this step if /var/lib/postgresql/14/main already exists
+   ```
+
+2. **Start and enable PostgreSQL service:**
+   ```bash
+   sudo systemctl start postgresql
+   sudo systemctl enable postgresql
+   ```
+
+3. **Create your database user:**
+   ```bash
+   sudo -u postgres createuser --interactive $(whoami)
+   # When prompted, choose:
+   # - Shall the new role be a superuser? (y/n) y
+   ```
+
+4. **Create the teleband database:**
+   ```bash
+   sudo -u postgres createdb teleband -O $(whoami)
+   ```
+
+### macOS Users (Homebrew)
+
+1. **Start PostgreSQL service:**
+   ```bash
+   brew services start postgresql@14
+   ```
+
+2. **Initialize database (if needed):**
+   ```bash
+   initdb --locale=C -E UTF-8 $(brew --prefix)/var/postgresql@14
+   ```
+
+3. **Create the teleband database:**
+   ```bash
+   createdb teleband
+   ```
+
+### Verify Database Setup
+
+Test your database connection:
+```bash
+psql -d teleband -c "SELECT version();"
+```
+
+If successful, you should see PostgreSQL version information.
 
 ## Setup Development Environment
 
